@@ -1,9 +1,9 @@
 <?php
-// formula_editor_v18.php
-// Éditeur Formula + SVG + script global (séparé) – avec LOG JS
-// - Remplacement fiable de <!-- IMAGE 1 --> par le SVG
-// - Export XML en fichier
-// - Export CSV en fichier
+// formula_editor_v19.php
+// Basé sur formula_editor_v18.php
+// - Même logique Formula + SVG + script global
+// - FIX export CSV (fichier) + possibilité de download XML côté client
+// - Remplacement fiable de <!-- IMAGE 1 -->, [SVG_1], <!-- SVG_1 -->
 
 mb_internal_encoding('UTF-8');
 
@@ -392,6 +392,10 @@ if ($action === 'load_xml' && isset($_FILES['xmlfile']) && is_uploaded_file($_FI
         $js_block = $js_trim;
     }
 
+    // IMPORTANT : resynchroniser la zone <textarea> avec le JS réellement utilisé
+    // pour l’export (CIRCUIT_CONFIG reconstruit).
+    $js_source = $js_trim;
+
     $body = $intro_html;
 
     // Remplacement fiable du placeholder par le SVG
@@ -444,73 +448,69 @@ if ($action === 'load_xml' && isset($_FILES['xmlfile']) && is_uploaded_file($_FI
         return htmlspecialchars($s, ENT_NOQUOTES | ENT_XML1, 'UTF-8');
     };
 
-for ($i = 0; $i < $MAX_PARTS; $i++) {
-    $p = $parts[$i];
-    if (!$p['use']) continue;
-    if (trim($p['answer']) === '' && trim($p['subqtext']) === '' && trim($p['incorrectfeedback']) === '') {
-        continue;
-    }
-
-    $xml .= "    <answers>\n";
-    $xml .= "     <partindex><text>"   . $enc($p['partindex'])   . "</text></partindex>\n";
-    $xml .= "     <placeholder><text>" . $enc($p['placeholder']) . "</text></placeholder>\n";
-    $xml .= "     <answermark><text>"  . $enc($p['answermark'])  . "</text></answermark>\n";
-    $xml .= "     <answertype><text>"  . $enc($p['answertype'])  . "</text></answertype>\n";
-    $xml .= "     <numbox><text>"      . $enc($p['numbox'])      . "</text></numbox>\n";
-    $xml .= "     <vars1><text>"       . $enc($p['vars1'])       . "</text></vars1>\n";
-    $xml .= "     <answer><text>"      . $enc($p['answer'])      . "</text></answer>\n";
-    $xml .= "     <vars2><text>"       . $enc($p['vars2'])       . "</text></vars2>\n";
-    $xml .= "     <correctness><text><![CDATA[" . $p['correctness'] . "]]></text></correctness>\n";
-    $xml .= "     <unitpenalty><text>" . $enc($p['unitpenalty']) . "</text></unitpenalty>\n";
-    $xml .= "     <postunit><text>"    . $enc($p['postunit'])    . "</text></postunit>\n";
-    $xml .= "     <ruleid><text>"      . $enc($p['ruleid'])      . "</text></ruleid>\n";
-    $xml .= "     <otherrule><text>"   . $enc($p['otherrule'])   . "</text></otherrule>\n";
-
-    // ====== 1) Question : tableau SVG + texte ======
-    $subq_html = '';
-    if ($p['subq_svg'] !== '' || $p['subqtext'] !== '') {
-        // tableau à 2 colonnes : SVG / texte
-        $subq_html = '<table style="width:100%"><tr>'
-                   . '<td style="width:50%;vertical-align:top;">' . $p['subq_svg'] . '</td>'
-                   . '<td style="width:50%;vertical-align:top;">' . $p['subqtext'] . '</td>'
-                   . '</tr></table>';
-    } else {
-        $subq_html = $p['subqtext'];
-    }
-
-    $xml .= "     <subqtext format=\"html\"><text><![CDATA[" . $subq_html . "]]></text></subqtext>\n";
-
-    // ====== 2) Feedbacks texte (neutres) inchangés ======
-    $xml .= "     <feedback format=\"html\"><text><![CDATA[" . $p['feedback'] . "]]></text></feedback>\n";
-    $xml .= "     <correctfeedback format=\"html\"><text><![CDATA[" . $p['correctfeedback'] . "]]></text></correctfeedback>\n";
-    $xml .= "     <partiallycorrectfeedback format=\"html\"><text><![CDATA[" . $p['partiallycorrectfeedback'] . "]]></text></partiallycorrectfeedback>\n";
-
-    // ====== 3) Feedback incorrect : restaurer un tableau complet ======
-    $incorrect_raw = $p['incorrectfeedback'];
-
-    // Cas 1 : le XML d'origine contenait déjà un tableau complet -> on le garde tel quel
-    if (strpos($incorrect_raw, '<td') !== false || strpos($incorrect_raw, '<table') !== false) {
-        $incorrect_html = $incorrect_raw;
-    } else {
-        // Cas 2 : on ne manipule que le texte de la cellule de droite dans l'éditeur
-        // -> on reconstruit un tableau 2 colonnes (SVG de la question + texte feedback)
-        $svg_for_fb = $p['subq_svg']; // on réutilise le même SVG que pour la question
-
-        if ($svg_for_fb !== '' || $incorrect_raw !== '') {
-            $incorrect_html = '<table style="width:100%"><tr>'
-                            . '<td style="width:50%;vertical-align:top;">' . $svg_for_fb . '</td>'
-                            . '<td style="width:50%;vertical-align:top;">' . $incorrect_raw . '</td>'
-                            . '</tr></table>';
-        } else {
-            // fallback : rien de spécial, juste le texte brut
-            $incorrect_html = $incorrect_raw;
+    for ($i = 0; $i < $MAX_PARTS; $i++) {
+        $p = $parts[$i];
+        if (!$p['use']) continue;
+        if (trim($p['answer']) === '' && trim($p['subqtext']) === '' && trim($p['incorrectfeedback']) === '') {
+            continue;
         }
+
+        $xml .= "    <answers>\n";
+        $xml .= "     <partindex><text>"   . $enc($p['partindex'])   . "</text></partindex>\n";
+        $xml .= "     <placeholder><text>" . $enc($p['placeholder']) . "</text></placeholder>\n";
+        $xml .= "     <answermark><text>"  . $enc($p['answermark'])  . "</text></answermark>\n";
+        $xml .= "     <answertype><text>"  . $enc($p['answertype'])  . "</text></answertype>\n";
+        $xml .= "     <numbox><text>"      . $enc($p['numbox'])      . "</text></numbox>\n";
+        $xml .= "     <vars1><text>"       . $enc($p['vars1'])       . "</text></vars1>\n";
+        $xml .= "     <answer><text>"      . $enc($p['answer'])      . "</text></answer>\n";
+        $xml .= "     <vars2><text>"       . $enc($p['vars2'])       . "</text></vars2>\n";
+        $xml .= "     <correctness><text><![CDATA[" . $p['correctness'] . "]]></text></correctness>\n";
+        $xml .= "     <unitpenalty><text>" . $enc($p['unitpenalty']) . "</text></unitpenalty>\n";
+        $xml .= "     <postunit><text>"    . $enc($p['postunit'])    . "</text></postunit>\n";
+        $xml .= "     <ruleid><text>"      . $enc($p['ruleid'])      . "</text></ruleid>\n";
+        $xml .= "     <otherrule><text>"   . $enc($p['otherrule'])   . "</text></otherrule>\n";
+
+        // ====== 1) Question : tableau SVG + texte ======
+        $subq_html = '';
+        if ($p['subq_svg'] !== '' || $p['subqtext'] !== '') {
+            $subq_html = '<table style="width:100%"><tr>'
+                       . '<td style="width:50%;vertical-align:top;">' . $p['subq_svg'] . '</td>'
+                       . '<td style="width:50%;vertical-align:top;">' . $p['subqtext'] . '</td>'
+                       . '</tr></table>';
+        } else {
+            $subq_html = $p['subqtext'];
+        }
+
+        $xml .= "     <subqtext format=\"html\"><text><![CDATA[" . $subq_html . "]]></text></subqtext>\n";
+
+        // ====== 2) Feedbacks texte (neutres) inchangés ======
+        $xml .= "     <feedback format=\"html\"><text><![CDATA[" . $p['feedback'] . "]]></text></feedback>\n";
+        $xml .= "     <correctfeedback format=\"html\"><text><![CDATA[" . $p['correctfeedback'] . "]]></text></correctfeedback>\n";
+        $xml .= "     <partiallycorrectfeedback format=\"html\"><text><![CDATA[" . $p['partiallycorrectfeedback'] . "]]></text></partiallycorrectfeedback>\n";
+
+        // ====== 3) Feedback incorrect : restaurer un tableau complet ======
+        $incorrect_raw = $p['incorrectfeedback'];
+
+        if (strpos($incorrect_raw, '<td') !== false || strpos($incorrect_raw, '<table') !== false) {
+            // On garde le tableau d'origine
+            $incorrect_html = $incorrect_raw;
+        } else {
+            // On ne manipule que la cellule de droite dans l'éditeur
+            $svg_for_fb = $p['subq_svg']; // même SVG que pour la question
+
+            if ($svg_for_fb !== '' || $incorrect_raw !== '') {
+                $incorrect_html = '<table style="width:100%"><tr>'
+                                . '<td style="width:50%;vertical-align:top;">' . $svg_for_fb . '</td>'
+                                . '<td style="width:50%;vertical-align:top;">' . $incorrect_raw . '</td>'
+                                . '</tr></table>';
+            } else {
+                $incorrect_html = $incorrect_raw;
+            }
+        }
+
+        $xml .= "     <incorrectfeedback format=\"html\"><text><![CDATA[" . $incorrect_html . "]]></text></incorrectfeedback>\n";
+        $xml .= "    </answers>\n";
     }
-
-    $xml .= "     <incorrectfeedback format=\"html\"><text><![CDATA[" . $incorrect_html . "]]></text></incorrectfeedback>\n";
-    $xml .= "    </answers>\n";
-}
-
 
     $xml .= "  </question>\n";
     $xml .= "</quiz>\n";
@@ -518,7 +518,7 @@ for ($i = 0; $i < $MAX_PARTS; $i++) {
     $xml_skeleton = $xml;
 }
 
-// Si on est en mode téléchargement XML, on sort immédiatement le fichier
+// Si on est en mode téléchargement XML côté serveur, on sort immédiatement le fichier
 if ($action === 'download_xml' && $xml_skeleton !== '') {
     $fnameBase = $qname !== '' ? $qname : 'Question_SVG_Formula';
     $fnameBase = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $fnameBase);
@@ -534,7 +534,7 @@ if ($action === 'download_xml' && $xml_skeleton !== '') {
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Éditeur Formula + SVG + script global (V18)</title>
+<title>Éditeur Formula + SVG + script global (V19)</title>
 <style>
     body {
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -708,7 +708,7 @@ window.MathJax = {
 </head>
 <body>
 <header>
-    <h1>Éditeur Formula + SVG + script global — V18</h1>
+    <h1>Éditeur Formula + SVG + script global — V19b</h1>
 </header>
 <main>
 <form method="post" enctype="multipart/form-data" id="mainForm">
@@ -749,9 +749,9 @@ window.MathJax = {
                 <button type="button" class="btn-secondary" onclick="syncQuestionEditor();exportCSV();">
                     Exporter CSV (zone texte)
                 </button>
-                <button type="button" class="btn-secondary" onclick="downloadCSVFile();">
-                    Exporter CSV (fichier)
-                </button>
+				<button type="button" class="btn-secondary" onclick="downloadCsv();">
+					Exporter CSV (fichier)
+				</button>
             </div>
         </div>
 
@@ -760,7 +760,10 @@ window.MathJax = {
                 Générer / voir XML
             </button>
             <button type="submit" name="action" value="download_xml" class="btn-secondary">
-                Exporter XML (fichier)
+                Exporter XML (serveur)
+            </button>
+            <button type="button" class="btn-secondary" onclick="downloadXml();">
+                Télécharger XML (client)
             </button>
             <span class="mini">Le XML complet s’affiche en bas (bouton “Générer”).</span>
         </div>
@@ -1045,10 +1048,12 @@ window.MathJax = {
 
         <div class="section">
             <h2>XML complet (à importer dans Moodle)</h2>
-            <textarea rows="20"><?php
+            <textarea id="xml_output" rows="20"><?php
                 echo htmlspecialchars($xml_skeleton, ENT_NOQUOTES, 'UTF-8');
             ?></textarea>
         </div>
+    <?php else: ?>
+        <textarea id="xml_output" style="display:none;"></textarea>
     <?php endif; ?>
 
     <div class="section">
@@ -1085,6 +1090,8 @@ window.MathJax = {
     </div>
 
 </form>
+
+
 <script>
 // ====== Constante globale ======
 var MAX_PARTS = <?php echo $MAX_PARTS; ?>;
@@ -1093,7 +1100,6 @@ var MAX_PARTS = <?php echo $MAX_PARTS; ?>;
 function logDebug(msg) {
     var box = document.getElementById('debuglog');
     if (!box) return;
-    // si premier message = "(log vide)", on efface
     if (box.childNodes.length === 1 && box.textContent.trim() === '(log vide)') {
         box.innerHTML = '';
     }
@@ -1113,8 +1119,8 @@ window.onerror = function (message, source, lineno, colno, error) {
 };
 
 // ==== WYSIWYG principal (intro HTML) ====
-function qt_getEditor() { 
-    return document.getElementById('questiontext_editor'); 
+function qt_getEditor() {
+    return document.getElementById('questiontext_editor');
 }
 function qt_wrapSelection(before, after) {
     var ed = qt_getEditor();
@@ -1125,19 +1131,19 @@ function qt_wrapSelection(before, after) {
     document.execCommand('insertHTML', false, before + txt + after);
 }
 function qt_insertLatexInline() {
-    var ed = qt_getEditor(); 
+    var ed = qt_getEditor();
     if (!ed) return;
     ed.focus();
     document.execCommand('insertHTML', false, '\\(  \\)');
 }
 function qt_insertLatexBlock() {
-    var ed = qt_getEditor(); 
+    var ed = qt_getEditor();
     if (!ed) return;
     ed.focus();
     document.execCommand('insertHTML', false, '$$  $$');
 }
 function qt_insertSvgTag() {
-    var ed = qt_getEditor(); 
+    var ed = qt_getEditor();
     if (!ed) return;
     ed.focus();
     document.execCommand('insertHTML', false, '[SVG_1]');
@@ -1282,7 +1288,8 @@ function exportCSV() {
             'unitpenalty_', 'postunit_', 'ruleid_', 'otherrule_',
             'subqtext_', 'feedback_', 'correctfeedback_',
             'partiallycorrectfeedback_', 'incorrectfeedback_',
-            'scriptparams_q_', 'scriptparams_fb_', 'subq_svg_'
+            'scriptparams_q_', 'scriptparams_fb_', 'subq_svg_',
+            'imgid_q_', 'imgid_fb_'
         ];
         for (var k = 0; k < keys.length; k++) {
             var prefix = keys[k];
@@ -1350,7 +1357,8 @@ function importCSV() {
             'unitpenalty_', 'postunit_', 'ruleid_', 'otherrule_',
             'subqtext_', 'feedback_', 'correctfeedback_',
             'partiallycorrectfeedback_', 'incorrectfeedback_',
-            'scriptparams_q_', 'scriptparams_fb_', 'subq_svg_'
+            'scriptparams_q_', 'scriptparams_fb_', 'subq_svg_',
+            'imgid_q_', 'imgid_fb_'
         ];
         for (var k = 0; k < keys.length; k++) {
             var prefix = keys[k];
@@ -1376,7 +1384,7 @@ function importCSV() {
 
 // ==== Helpers preview & LaTeX ====
 
-// déséchappe le contenu « &lt;td&gt;...&lt;/td&gt; » des textarea
+// déséchappe le contenu HTML des textarea
 function decodeHtmlEntities(str) {
     if (!str) return '';
     var txt = document.createElement('textarea');
@@ -1458,18 +1466,17 @@ function buildSvgInstanceForPart(partIndex) {
     var base = getBaseSvgText();
     if (!base) return '';
 
-    // on détecte l'id du <svg> principal
     var m = base.match(/<svg[^>]*id="([^"]+)"/i);
     var baseId = m ? m[1] : 'circuit1';
-    var newId  = 'circuit' + (partIndex + 1) + 'a';
+    var idx = partIndex + 1;
+    var newId  = 'circuit' + idx + 'a';
 
     var search = 'id="' + baseId + '"';
-    var idx = base.indexOf(search);
-    if (idx === -1) {
-        // on ne trouve pas, on renvoie tel quel
+    var pos = base.indexOf(search);
+    if (pos === -1) {
         return base;
     }
-    return base.substring(0, idx) + 'id="' + newId + '"' + base.substring(idx + search.length);
+    return base.substring(0, pos) + 'id="' + newId + '"' + base.substring(pos + search.length);
 }
 
 // ==== Rendu SVG dans un iframe (principal + question + feedback) ====
@@ -1489,7 +1496,6 @@ function renderCircuitInIframe(containerId, svgInstance, jsSource, cfgSnippet, c
 
     var txtJs = jsSource;
     try {
-        // on retire éventuellement un wrapper externe <scr...>
         var openTag  = '<scr' + 'ipt';
         var closeTag = '<' + '/scr' + 'ipt>';
         var idxOpen  = txtJs.indexOf(openTag);
@@ -1503,16 +1509,14 @@ function renderCircuitInIframe(containerId, svgInstance, jsSource, cfgSnippet, c
         if (idxClose !== -1) {
             txtJs = txtJs.substring(0, idxClose);
         }
-        logDebug('renderCircuitInIframe: wrapper external retiré');
+        logDebug('renderCircuitInIframe: wrapper externe retiré');
     } catch (e) {
         logDebug('renderCircuitInIframe: strip wrapper ERROR ' + e);
     }
 
-    // rendre CIRCUIT_CONFIG global si pattern trouvé
     txtJs = txtJs.replace(/var\s+CIRCUIT_CONFIG\s*=\s*\{/, 'window.CIRCUIT_CONFIG = {');
     logDebug('renderCircuitInIframe: CIRCUIT_CONFIG globalisé si pattern trouvé');
 
-    // on ajoute la config dédiée pour ce circuit, si fournie
     if (cfgSnippet && circuitId) {
         function indentSnippetLoc(s) {
             var lines = s.split(/\r?\n/);
@@ -1533,7 +1537,6 @@ function renderCircuitInIframe(containerId, svgInstance, jsSource, cfgSnippet, c
         txtJs += '\n' + override;
     }
 
-    // neutraliser les séquences de fermeture HTML dans le JS injecté
     var safeJs = txtJs.replace(/<\//g, '<\\/');
 
     var iframe = document.createElement('iframe');
@@ -1579,16 +1582,14 @@ function updateSvgPreview(i) {
              ', cfgMain length=' + cfgMain.length +
              ', cfgPart length=' + cfgPart.length);
 
+    var container = document.getElementById('subq_preview_svg_' + i);
     if (!svgSrc || !jsSrc) {
-        var container = document.getElementById('subq_preview_svg_' + i);
         if (container) container.textContent = "SVG ou script global manquant.";
         return;
     }
 
     var idx = i + 1;
     var circuitId = 'circuit' + idx + 'a';
-
-    // on fabrique une instance dédiée avec un id différent
     var svgInstance = buildSvgInstanceForPart(i);
     var effectiveCfg = cfgPart || cfgMain;
 
@@ -1605,16 +1606,14 @@ function updateSvgFeedbackPreview(i) {
              ', js length=' + jsSrc.length +
              ', cfgFb length=' + cfgFb.length);
 
+    var container = document.getElementById('fb_preview_svg_' + i);
     if (!svgSrc || !jsSrc || !cfgFb) {
-        var container = document.getElementById('fb_preview_svg_' + i);
         if (container) container.textContent = "SVG ou script feedback manquant.";
         return;
     }
 
     var idx = i + 1;
     var circuitId = 'circuit' + idx + 'b';
-
-    // même logique : instance dédiée par partie
     var svgInstance = buildSvgInstanceForPart(i);
 
     renderCircuitInIframe('fb_preview_svg_' + i, svgInstance, jsSrc, cfgFb, circuitId);
@@ -1648,6 +1647,7 @@ function addPart() {
 }
 
 // ==== Download helpers XML / CSV ====
+// Utilitaires génériques
 function downloadTextFile(filename, mimeType, content) {
     var blob = new Blob([content], { type: mimeType });
     var url = URL.createObjectURL(blob);
@@ -1660,21 +1660,11 @@ function downloadTextFile(filename, mimeType, content) {
     URL.revokeObjectURL(url);
 }
 
-function downloadXml() {
-    var ta = document.getElementById('xml_output');
-    if (!ta) {
-        alert("Zone XML introuvable.");
-        return;
-    }
-    var txt = ta.value || ta.textContent || '';
-    if (!txt.trim()) {
-        alert("Pas de XML à télécharger.");
-        return;
-    }
-    downloadTextFile('question_formulas.xml', 'application/xml', txt);
-}
-
-function downloadCsv() {
+// Export CSV fichier (bouton "Exporter CSV (fichier)")
+function downloadCSVFile() {
+    logDebug('downloadCSVFile()');
+    // On génère d’abord le CSV dans la zone texte
+    exportCSV();
     var ta = document.getElementById('csv_data');
     if (!ta) {
         alert("Zone CSV introuvable.");
@@ -1685,8 +1675,45 @@ function downloadCsv() {
         alert("Pas de CSV à télécharger.");
         return;
     }
-    downloadTextFile('questions_formulas.csv', 'text/csv', txt);
+    var base = document.getElementById('qname').value || 'questions_formulas';
+    base = base.replace(/[^A-Za-z0-9_\-]+/g, '_');
+    downloadTextFile(base + '.csv', 'text/csv', txt);
 }
+
+/* ======================================================
+   ✔ Compatibilité V19 : wrapper appelé par le bouton
+      <button onclick="downloadCsv()">
+   ====================================================== */
+function downloadCsv() {
+    downloadCSVFile();
+}
+
+/* ======================================================
+   ✔ Download XML côté client
+      (bouton : onclick="downloadXml()")
+      Lecture directe de #xml_output
+   ====================================================== */
+function downloadXml() {
+    logDebug('downloadXml()');
+
+    var ta = document.getElementById('xml_output');
+    if (!ta) {
+        alert("Zone XML introuvable.");
+        return;
+    }
+
+    var txt = ta.value || ta.textContent || '';
+    if (!txt.trim()) {
+        alert("Pas de XML à télécharger.");
+        return;
+    }
+
+    var base = document.getElementById('qname').value || 'question_formulas';
+    base = base.replace(/[^A-Za-z0-9_\-]+/g, '_');
+
+    downloadTextFile(base + '.xml', 'application/xml', txt);
+}
+
 
 // ==== INIT ====
 document.addEventListener('DOMContentLoaded', function() {
@@ -1695,7 +1722,6 @@ document.addEventListener('DOMContentLoaded', function() {
     var hidden = document.getElementById('intro_html');
     if (ed && hidden) ed.innerHTML = hidden.value || '';
 
-    // SVG principal + toutes les parties
     updateMainSvgPreview();
     for (var i = 0; i < MAX_PARTS; i++) {
         updateSubqPreview(i);
@@ -1708,7 +1734,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (form) {
         form.addEventListener('submit', function() {
             logDebug('submit mainForm');
-            // on force les SVG de chaque partie avant envoi pour l'export XML
             for (var i = 0; i < MAX_PARTS; i++) {
                 var hiddenSvg = document.getElementById('subq_svg_' + i);
                 if (hiddenSvg) {
@@ -1720,7 +1745,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
-</html>
+
+
 
 </main>
 </body>
