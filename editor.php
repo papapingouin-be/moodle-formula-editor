@@ -1494,24 +1494,40 @@ function renderCircuitInIframe(containerId, svgInstance, jsSource, cfgSnippet, c
         return;
     }
 
-    var txtJs = jsSource;
+    var externalScripts = [];
+    var txtJs = '';
+
     try {
-        var openTag  = '<scr' + 'ipt';
-        var closeTag = '<' + '/scr' + 'ipt>';
-        var idxOpen  = txtJs.indexOf(openTag);
-        if (idxOpen !== -1) {
-            var idxGt = txtJs.indexOf('>', idxOpen);
-            if (idxGt !== -1) {
-                txtJs = txtJs.substring(idxGt + 1);
+        var scriptRegex = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+        var match;
+        var found = false;
+        var lastIndex = 0;
+        var sourceText = jsSource || '';
+        while ((match = scriptRegex.exec(sourceText))) {
+            found = true;
+            var attrs = match[1] || '';
+            var content = match[2] || '';
+
+            if (/\bsrc\s*=/.test(attrs)) {
+                var cleanAttr = attrs.trim();
+                var attrPart = cleanAttr ? ' ' + cleanAttr : '';
+                externalScripts.push('<script' + attrPart + '></script>');
+            } else {
+                txtJs += content + '\n';
             }
+            lastIndex = scriptRegex.lastIndex;
         }
-        var idxClose = txtJs.lastIndexOf(closeTag);
-        if (idxClose !== -1) {
-            txtJs = txtJs.substring(0, idxClose);
+
+        if (!found) {
+            txtJs = sourceText;
+        } else if (lastIndex < sourceText.length) {
+            txtJs += sourceText.substring(lastIndex);
         }
-        logDebug('renderCircuitInIframe: wrapper externe retiré');
+
+        logDebug('renderCircuitInIframe: scripts analysés (externes=' + externalScripts.length + ')');
     } catch (e) {
-        logDebug('renderCircuitInIframe: strip wrapper ERROR ' + e);
+        txtJs = jsSource;
+        logDebug('renderCircuitInIframe: analyse scripts ERROR ' + e);
     }
 
     txtJs = txtJs.replace(/var\s+CIRCUIT_CONFIG\s*=\s*\{/, 'window.CIRCUIT_CONFIG = {');
@@ -1548,7 +1564,13 @@ function renderCircuitInIframe(containerId, svgInstance, jsSource, cfgSnippet, c
     var foot = '</body></html>';
     var oTag = '<scr' + 'ipt>';
     var cTag = '<' + '/scr' + 'ipt>';
-    var html = head + svgInstance + oTag + safeJs + cTag + foot;
+
+    var htmlParts = [head, svgInstance];
+    if (externalScripts.length > 0) {
+        htmlParts = htmlParts.concat(externalScripts);
+    }
+    htmlParts.push(oTag + safeJs + cTag, foot);
+    var html = htmlParts.join('');
 
     iframe.srcdoc = html;
     container.appendChild(iframe);
